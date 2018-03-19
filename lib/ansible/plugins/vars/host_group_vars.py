@@ -16,6 +16,7 @@
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 #############################################
 from __future__ import (absolute_import, division, print_function)
+
 __metaclass__ = type
 
 DOCUMENTATION = '''
@@ -89,10 +90,11 @@ class VarsModule(BaseVarsPlugin):
                         if os.path.exists(b_opath):
                             if os.path.isdir(b_opath):
                                 self._display.debug("\tprocessing dir %s" % opath)
-                                found_files = self._find_vars_files(opath, entity.name)
+                                found_files = self._find_vars_files(opath, entity)
                                 FOUND[key] = found_files
                             else:
-                                self._display.warning("Found %s that is not a directory, skipping: %s" % (subdir, opath))
+                                self._display.warning(
+                                    "Found %s that is not a directory, skipping: %s" % (subdir, opath))
 
                     for found in found_files:
                         new_data = loader.load_from_file(found, cache=True, unsafe=True)
@@ -103,12 +105,25 @@ class VarsModule(BaseVarsPlugin):
                     raise AnsibleParserError(to_native(e))
         return data
 
-    def _find_vars_files(self, path, name):
+    def _find_vars_files(self, b_path, entity):
         """ Find {group,host}_vars files """
 
-        b_path = to_bytes(os.path.join(path, name))
+        config_paths = [to_bytes(os.path.join(b_path, entity.name))]
+
+        if isinstance(entity, Host):
+            config_paths.extend([to_bytes(os.path.join(b_path, group.name, entity.name)) for group in entity.groups])
+
         found = []
 
+        for p in config_paths:
+            self._lookup_path(p, found)
+
+            # stop on first match
+            if len(found) != 0:
+                break
+        return found
+
+    def _lookup_path(self, b_path, found):
         # first look for w/o extensions
         if os.path.exists(b_path):
             if os.path.isdir(b_path):
@@ -129,7 +144,6 @@ class VarsModule(BaseVarsPlugin):
                 if os.path.exists(full_path) and os.path.isfile(full_path):
                     found.append(full_path)
                     break
-        return found
 
     def _get_dir_files(self, path):
 
